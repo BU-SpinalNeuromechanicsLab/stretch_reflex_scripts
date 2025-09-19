@@ -1,0 +1,207 @@
+'Script was written 9/10/2010, edited 7/18/2025 by PN for data collected by TMR, PN, and TCC
+
+'This script is designed to analyze reflex and EMG data collected from mice. It identifies triggers that signal the beginning of the vibration. 
+'Once a trigger is detected, the script measures the force and EMG integral.
+'If multiple stretches are performed, the script will continue processing the user specified number of triggers, 
+'performing the same measurements for each one. After all measurements are taken, 'the script will populate an Excel sheet with the data.
+'Note that since the file is being created without using Excel, you may encounter a warning when opening the sheet. 
+'Excel will notify you that the file format doesn't match and ask, "Do you want to open it anyway?" Simply select "Yes," and the sheet will open correctly.
+
+
+var tv%, ok%;
+if ViewKind() then														'Not a time view
+tv% := FileOpen("",0,1,"File to Analyse");
+else
+tv% := View();
+endif;
+if (tv% <= 0) then 
+message("Need a Time View (Data File) to Analyse"); 
+halt; 
+endif;
+
+'Section to add cursors and populate settings menu 
+' XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+CursorSet(2);	'sets the number of vertical cursors
+CursorLabel(2,1); 'gets and optionally sets the cursor label style for the view or for a cursor 1
+CursorLabel(2,2); 'gets and optionally sets the cursor label style for the view or for a cursor 2															
+Interact("Place cursors 1 at start and cursor 2 at end of a stimulus paradigm",1);  'message in top right corner letting user know to place cursors 
+var curs1, curs2;  'variable names
+curs1 := Cursor(1);
+curs2 := Cursor(2);
+
+var trigchan%, forcechan, lengthchan, emgchan; 'the channels required to perform script
+var trialnum; 'this is the number of trials between cursor 1 and cursor 2
+var vibduration; ' duration of the vibration
+var forcecalib; 'force calibration, will be used to change voltage into mN
+var outfile$; 'name for the exported file into excel
+
+'presets for the menu
+' XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+trigchan% := 7; forcechan := 3; forcecalib := 1.0; lengthchan :=4; emgchan := 2;
+forcecalib := 1.0; vibduration := 1.0;
+
+'creating the menu and creating the variables to be used
+' XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+View(tv%);
+'FileName$
+'1 The disk drive/volume name
+'2 The path section, excluding the volume/drive and the name of the file 
+'3 The file name up to but not including the last . excluding any trailing number. 
+'4 Any trailing numbers from 3.  
+
+outfile$ := FileName$(1) + FileName$(2) + FileName$(3) + FileName$(4) + ".xls";
+repeat
+   DlgCreate(  "Analysis Settings");  	             'this function starts the definition of a dialog 							  
+    DlgChan(1,  "Vibration Trigger Channel",2);   		 'asking which channel has triggers indicating the start of a vibration
+  	DlgChan(2,  "Force Channel", 1);                 'asking which channel is force
+    DlgChan(3,  "Length Channel", 1);                'asking which channel is Length
+    DlgChan(4,  "EMG Channel", 1);                   'asking which channel is EMG
+    DlgReal(5, 	"Vibration duration (sec)",0, 1000); 'asking for duration of the vibration
+    DlgReal(6,  "How many Volts = 1N", 0, 1000);     'asking for the amount of volts in the force channel = 1 newton, this is used to convert force into mN for output 
+	DlgString(7,"Output filename ", 254);
+
+   ok% := DlgShow(trigchan%, forcechan, lengthchan, emgchan, vibduration, forcecalib, outfile$); 'this feeds the menu decisions into the variables
+    
+    
+'in case the cancel button or no trigger channel is detected
+' XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+	if ok% = 0 then
+	Message("Program Cancelled");
+	halt;
+	endif;
+	
+	if ok% then
+		if trigchan% = 0 then
+		Message("No Trigger Channel");
+		ok% := 0;
+		else		
+	endif;
+endif;
+until ok%;
+
+
+'Arrays for the variables needed for print out.
+' XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+var Ctriggertime[500], Cprestretchforce[500], Cforceintergral[500];
+
+
+' I started around here
+' XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+' Analysis begins here;
+
+var printerfile%;
+	printerfile% := FileOpen(outfile$,8,1);
+	if (printerfile%<0) Then
+    	Message("Could not open an output file");
+    	halt;
+	endif	
+
+View(tv%);
+
+
+'duplicates the WPI channel and then rectifies and integrates
+'*****************************************************************************************************************	
+    var ch1%;
+ch1% := ChanDuplicate(emgchan); 'Create a duplicate    
+ChanProcessAdd(ch1%, 2); 'Add DC Remove to channel 801
+ChanProcessAdd(ch1%, 0); 'Add Rectify to channel 801
+ChanProcessAdd(ch1%, 1); 'Add Smooth to channel 801
+ChanProcessArg(ch1%, 3, 1, 0.02); 'Set Smooth Time constant (s)
+ChanShow(ch1%);
+Optimise(-2); 'Visible channels
+
+
+ChanProcessAdd(emgchan, 2); 'Add DC Remove to channel 801
+
+
+
+'section for vibration analysis
+'**************************************************************************************************************
+
+View(tv%);
+
+' XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+forcecalib := (1/forcecalib)*1000; 'changes force units to mN
+
+'section for counting the amount of triggers which informs the number of times the code runs
+' XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
+View(tv%);
+var triggertime, nexttrig;
+triggertime := NextTime(trigchan%,curs1);  ' finds the next item on the trigger channel after cursor 1
+nexttrig := NextTime(trigchan%, triggertime);  ' finds the next item on the trigger channel after the vibration is just analyzed
+trialnum := ChanMeasure(trigchan%, 4, curs1, curs2); 'counts the number of triggers between cursor 1 and cursor 2
+
+
+var i%; 'this will be an array that holds the number of trials.
+for i% := 1 to trialnum do; 'this fills that array
+View(tv%);
+
+
+'Measuring the mean force before vibration
+' XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+var prestretchforce;
+
+prestretchforce := Chanmeasure(forcechan, 2, triggertime - 0.01, triggertime);
+prestretchforce := prestretchforce * forcecalib;
+
+
+
+'measure the integral of the force and EMG during a vibration
+' XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+var int, subarea, forceintergral;
+int := Chanmeasure(forcechan, 1, triggertime, triggertime + vibduration); 'measures the area between the trigger time and the end vibration
+int := int * forcecalib;				'this will convert Volts to mN * second
+subarea := prestretchforce * vibduration; 'calculates the area below the vibration
+    forceintergral := int - subarea; 'subtraction of the subarea from the int will give the integral of just the vibration
+    
+    
+var EMGint, EMGintergral, CEMGintergral[500];
+EMGint := Chanmeasure(ch1%, 1, triggertime, triggertime + vibduration + 0.0068); 'measures the area between the trigger time and the end of the vibration
+EMGintergral := EMGint * 100;				'this will convert to mV * second
+    
+
+    
+'fills the arrays used for printing with the variables.    
+    ' XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+	
+View(printerfile%);
+Ctriggertime[i%] := triggertime;
+Cprestretchforce[i%] := prestretchforce;
+Cforceintergral[i%] := forceintergral;
+CEMGintergral[i%] := EMGintergral;
+
+
+
+View(tv%); 
+triggertime := NextTime(trigchan%, triggertime);' jump to next trigger
+
+next;
+
+'setting up printer file 
+' XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
+View(printerfile%);
+Print("\tTrial Number\tTrigger time(sec)\tPres tretch force(mN)\tForce intergral (mN*sec)\tEMG intergral(mV*sec)\n");
+for i% := 1 to trialnum do
+   Print("\t");
+	Print("%d\t", i%);                  'Trial number
+	Print("%f\t", Ctriggertime[i%]);    'Trigger time
+	Print("%f\t", Cprestretchforce[i%]);'Pre stretch force
+	Print("%f\t", Cforceintergral[i%]); 'Force intergral
+    Print("%f\t", CEMGintergral[i%]);   'EMG integral
+
+
+	Print("\n");'goes to next line to print
+
+
+next
+	
+FileClose();     'used to close the current window or external file
+FrontView(tv%);  'the data window returns to the front
+
+
+	
+halt;
+
+'I finished around here XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
