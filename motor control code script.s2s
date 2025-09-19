@@ -1,0 +1,244 @@
+
+'This code is to be paired with Cope Lab motor control code via script (.SCS) files.  12-05-05 JFP, edited 7-18-2025 PN
+'This code was used with the aurora scientific brand of lever systems, specifically the 305C-LR, and 300C-LR.
+'Available choices for stimulus are Quick Stretches, Ramp-hold-release, three successive triangles, and small
+'amplitude vibrations at a range of frequencies from 10Hz to 250Hz. 
+
+
+
+
+var vh%;			'will hold the sampling view
+
+
+'creating toolbar, default variables, and a button labeled settings that has 4 options to change stretch parameters.
+'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+var list$[4];         'creates 4 options for the settings menu
+var choice%, ok%;     'enables chioces for settings menu
+var nsteps%, nsteps1%, vincr%;  'variables used for diffrent parameters
+
+var ramptime := 0.15, rampvolts   := 3.0,  ramphold  := 1.0, rampdown := 0.15, rampdelay := 4.0;    'default settings for ramp-hold-release
+var tritime  := 0.750, trivolts    := 3.0, tridelay  := 30.0;                                       'default settings for three triangles
+var tritime2  := 0.0025, trivolts2    := 1.0, tridelay2  := 1.0;                                    'default settings for quick stretches
+var vibtime  := 1.0, vibvolts    := 0.04,  vibhold   := 1.0, vibdelay  := 2.0;                      'default settings for vibrations
+
+
+'Strings for settings menu - enter parameter values
+list$[0] := "Ramp";
+list$[1] := "Three Triangles";
+list$[2] := "Quick Stetch";
+list$[3] := "Vibration";
+
+
+'Toolbar buttons, in quotes are the names of the buttons, then the call function. skipping toolbar numbers creates spaces between buttons
+ToolbarClear();     'Remove any old buttons
+ToolbarSet(1, "Quit",     OnQuit%);
+ToolbarSet(2, "StopAll",  OnStopAll%);
+ToolbarSet(4, "Settings", OnSettings%);
+ToolbarSet(6, "Ramp",     OnRamp%);
+ToolbarSet(8,"Vib(250)",      OnVibration4%);
+ToolbarSet(9,"Vib(167)",      OnVibration6%);
+ToolbarSet(10,"Vib(100)",      OnVibration10%);
+ToolbarSet(11,"Vib(50)",      OnVibration20%);
+ToolbarSet(12,"Vib(20)",		OnVibration50%);
+ToolbarSet(13,"Vib(10)",		OnVibration100%);
+ToolbarSet(15,"Three Triangles", OnThreeTri%);
+ToolbarSet(17,"Quick Stretch", OnQuickstretch%);
+
+
+
+Toolbar("Motor Control", 751);
+halt;
+
+
+'individual buttons
+'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
+Func OnQuit%()     'User wants to exit
+  return 0;          'Cancel the toolbar
+end;
+
+
+
+Func OnThreeTri%()                              'Three Triangles
+  trivolts := trivolts * 0.058 * 3.4901578;     'coverts mm command to volts
+  nsteps% := tritime * 1000 / 2.0;              'calculates the amount of time the triangle rises and then falls
+  SampleSeqVar(1, nsteps%);                     'counter for ramping up and down
+  vincr% := 32768.0 * trivolts2 / nsteps%;      'DAC increment/step 
+  SampleSeqVar(2, vincr%);                      'arg for ADDAC0 increment
+  SampleSeqVar(3, -vincr%);                     'arg for ADDAC0 decrement
+  nsteps% := tridelay * 1000.0;                 'delay between sets of triangles
+  SampleSeqVar(4, nsteps%);                     'counter for delay time
+SampleKey("N");                                 'letter that calls to the sequencer
+return 1;        					            'Leave toolbar active
+end;
+
+
+Func OnQuickstretch%()                          'Quick Stretch
+  trivolts2 := trivolts2 * 0.058 * 3.4901578;   'coverts mm command to volts
+  nsteps% := tritime2 * 1000 / 2.0;             'calculates the amount of time the triangle rises and then falls
+  SampleSeqVar(1, nsteps%);                     'counter for ramping up and down
+  vincr% := 32768.0 * trivolts2 / nsteps%;      'DAC increment/step 
+  SampleSeqVar(2, vincr%);                      'arg for ADDAC0 increment
+  SampleSeqVar(3, -vincr%);                     'arg for ADDAC0 decrement
+  nsteps% := tridelay2 * 1000.0;                'arg delay between sets of quick stretchs
+  SampleSeqVar(4, nsteps%);                     'counter for delay time
+  SampleKey("E");                               'letter that calls to the sequencer 
+  return 1;                                     'Leave toolbar active
+end;
+
+
+Func OnRamp%()                                  'Ramp-Hold-Release
+  nsteps% := ramptime * 1000 / 2.0;             'coverts mm command to volts
+  SampleSeqVar(1, nsteps%);                     'counter for ramping up
+  vincr% := (32768.0/-5.0)*(rampvolts/nsteps%); 'DAC increment/step
+  SampleSeqVar(2, -vincr%);                     'arg for ADDAC0 increment
+  nsteps% := ramphold * 1000.0;                 'arg for hold phase
+  SampleSeqVar(3, nsteps%);                     'counter for hold time
+  nsteps% := rampdown * 1000.0 / 2.0;           'divide by 2 because there are 2 sequencer instr. in ramp-up loop
+  SampleSeqVar(4, nsteps%);                     'counter for ramping down
+  vincr% := (32768.0/5.0)*(rampvolts/nsteps%);  'DAC decrement/step
+  SampleSeqVar(5, -vincr%);                     'arg for ADDAC0 decrement
+  nsteps% := rampdelay * 1000.0;                'arg delay between sets of Ramp-Hold-Release
+  SampleSeqVar(6, nsteps%);                     'counter for delay time
+  SampleKey("R");                               'letter that calls to the sequencer 
+  return 1;                                     'Leave toolbar active
+end;
+
+
+Func OnVibration100%()                          '10 Hz Vibration
+ nsteps% := vibtime * 1000.0;                   'arg for duration of vibration
+     nsteps1% := vibdelay *1000;                'arg for delay between vibration
+	SampleSeqVar(1, nsteps%);                   'seq counter for duration
+	vincr% := 32768.0 * (vibvolts/ 5);          'arg for increment/step
+	SampleSeqVar(2,  vincr%);                   'DAC instruction for amplitude
+   SampleSeqVar(4, nsteps1%);                   'DAC instruction for delay
+  SampleKey("H");                               'letter that calls to the sequencer
+  return 1;                                     'Leave toolbar active
+end;
+
+Func OnVibration50%()                           '20 Hz Vibration
+ nsteps% := vibtime * 1000.0;                   'arg for duration of vibration
+     nsteps1% := vibdelay *1000;                'arg for delay between vibration
+	SampleSeqVar(1, nsteps%);                   'seq counter for duration
+	vincr% := 32768.0 * (vibvolts/ 5);          'arg for increment/step
+	SampleSeqVar(2,  vincr%);                   'DAC instruction for amplitude
+   SampleSeqVar(4, nsteps1%);                   'DAC instruction for delay
+  SampleKey("D");                               'letter that calls to the sequencer
+  return 1;                                     'Leave toolbar active
+end;
+
+
+Func OnVibration6%()                            '167 Hz Vibration
+ nsteps% := vibtime * 1000.0;                   'arg for duration of vibration
+     nsteps1% := vibdelay *1000;                'arg for delay between vibration
+	SampleSeqVar(1, nsteps%);                   'seq counter for duration
+	vincr% := 32768.0 * (vibvolts/ 5);          'arg for increment/step
+	SampleSeqVar(2,  vincr%);                   'DAC instruction for amplitude
+   SampleSeqVar(4, nsteps1%);                   'DAC instruction for delay
+  SampleKey("V");                               'letter that calls to the sequencer
+  return 1;                                     'Leave toolbar active
+end;
+
+
+Func OnVibration4%()                            '250 Hz Vibration
+ nsteps% := vibtime * 1000.0;                   'arg for duration of vibration
+     nsteps1% := vibdelay *1000;                'arg for delay between vibration
+	SampleSeqVar(1, nsteps%);                   'seq counter for duration
+	vincr% := 32768.0 * (vibvolts/ 5);          'arg for increment/step
+	SampleSeqVar(2,  vincr%);                   'DAC instruction for amplitude
+   SampleSeqVar(4, nsteps1%);                   'DAC instruction for delay
+  SampleKey("X");                               'letter that calls to the sequencer
+  return 1;                                     'Leave toolbar active
+end;
+
+Func OnVibration10%()                           '100 Hz Vibration
+ nsteps% := vibtime * 1000.0;                   'arg for duration of vibration
+     nsteps1% := vibdelay *1000;                'arg for delay between vibration
+	SampleSeqVar(1, nsteps%);                   'seq counter for duration
+	vincr% := 32768.0 * (vibvolts/ 5);          'arg for increment/step
+	SampleSeqVar(2,  vincr%);                   'DAC instruction for amplitude
+   SampleSeqVar(4, nsteps1%);                   'DAC instruction for delay
+  SampleKey("Y");                               'letter that calls to the sequencer
+  return 1;                                     'Leave toolbar active
+end;
+
+Func OnVibration20%()                           '50 Hz Vibration
+ nsteps% := vibtime * 1000.0;                   'arg for duration of vibration
+     nsteps1% := vibdelay *1000;                'arg for delay between vibration
+	SampleSeqVar(1, nsteps%);                   'seq counter for duration
+	vincr% := 32768.0 * (vibvolts/ 5);          'arg for increment/step
+	SampleSeqVar(2,  vincr%);                   'DAC instruction for amplitude
+   SampleSeqVar(4, nsteps1%);                   'DAC instruction for delay
+  SampleKey("B");                               'letter that calls to the sequencer
+  return 1;                                     'Leave toolbar active
+end;
+
+
+Func OnStopAll%()   'stop sine and other
+  SampleKey("Z");
+  return 1;       'Leave toolbar active
+end;
+
+
+
+Proc CloseView()
+if vh%>0 then
+  View(vh%); FileClose(); vh% := 0;
+endif;
+end;
+
+'setting sub menu
+'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+Func OnSettings%()  'Change pulse settings
+  DlgCreate("Motor Control Menu");         'title
+  DlgList  (1, "Choose an option", list$[]);
+  ok% := DlgShow(choice%);
+  if ok% <> 0 then
+    docase
+      case choice% = 0 then                                                 'Ramp, Hold, Release
+        DlgCreate("Ramp Parameters");                                       'title
+        DlgReal  (1, "Amplitude (mm)", -500.0,    500.0);                   
+        DlgReal  (2, "Ramp Time (sec) ",  0.002, 100);
+        DlgReal  (3, "Hold Time (sec)",   0.000, 100);
+		DlgReal  (4, "Release Time (sec)",  0.002, 100);  
+        DlgReal  (5, "Delay Time (sec)",  0.002, 100);  
+        ok% := DlgShow(rampvolts, ramptime, ramphold, rampdown, rampdelay);
+
+	  case choice% = 1 then  							                	'Three Triangles
+        DlgCreate("Three Triangles Parameters");                        	'title
+        DlgReal  (1, "Amplitude (mm)",      -5.0,    5.0);  
+        DlgReal  (2, "Ramp Time (sec) ",    0.002, 10000);
+		DlgReal  (3, "Intercycle Delay (sec)", 0, 300);  
+        ok% := DlgShow(trivolts, tritime, tridelay);
+        
+       case choice% = 2 then                                                'Quick Stretch
+        DlgCreate("Quick Stretch Parameters");                              'title
+        DlgReal  (1, "Amplitude (mm)",      -500.0,    500.0);  
+        DlgReal  (2, "Ramp-up Time (sec) ",    0.000, 100);
+        DlgReal  (3, "Intercycle Delay (sec)", 0.002, 300);  
+        ok% := DlgShow(trivolts2, tritime2, tridelay2);
+        
+        
+      case choice% = 3 then                                                 'Vibration
+        DlgCreate("Vibration Parameters");                                  'title
+        DlgReal  (1, "Duration (sec)",       0.002, 100);  
+        DlgReal  (2, "Amplitude (volts)",    0.002, 100);
+	    Dlgreal  (3, "Intercycle Delay (sec)", 0.002, 300); 
+		ok% := DlgShow(vibtime, vibvolts, vibdelay);
+  
+
+
+
+        
+     
+		 
+
+    endcase;
+ 
+  endif;
+  return 1;  'leave toolbar active
+end; 
+
+
+
+
